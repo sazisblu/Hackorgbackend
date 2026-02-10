@@ -25,12 +25,21 @@ const createAdmin = async (req, res) => {
 
   const { email, password, fullname } = req.body;
   try {
+    console.log("About to create admin with:", { email, fullname });
+    console.log("DATABASE_URL exists:", !!process.env.DATABASE_URL);
+
     const admin = await prisma.admin.create({
       data: { email, password, fullname },
     });
+
+    console.log("Admin created successfully:", admin.id);
     res.status(201).json(admin);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    console.error("Error creating admin:", error);
+    res.status(400).json({
+      error: error.message,
+      details: error.toString(),
+    });
   }
 };
 
