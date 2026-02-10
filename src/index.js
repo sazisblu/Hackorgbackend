@@ -6,7 +6,6 @@ const app = express();
 app.use(express.json());
 app.use("/api", adminroute);
 
-
 app.get("/test", (req, res) => {
   res.status(200).json({
     status: 200,
