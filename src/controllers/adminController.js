@@ -57,23 +57,39 @@ export const loginAdmin = async (req, res) => {
   // here lies the logic for chekcing if the admin exists in the admin table in the database
 
   const { email, password } = req.body;
-  const admin = await prisma.admin.findUnique({ where: { email } });
-  if (admin && bcrypt.compare(password, admin.password)) {
-    console.log(chalk.green("Admin with the given email exists"));
-    console.log(chalk.green("The entered password matches."));
-    console.log("entered pass:", password, 10);
-    console.log("hashed password:", admin.password);
-    res.status(200).json({
-      status: 200,
-      Message: `Admin with the given email exists ${email}`,
-      id: admin.id,
-      email: admin.email,
-      token: generateToken(admin.id),
-    });
-  } else {
-    res.status(401).json({
-      status: 401,
-      Message: "Invalid Credentials",
+  try {
+    const admin = await prisma.admin.findUnique({ where: { email } });
+    if (!admin) {
+      return res.status(401).json({
+        status: 401,
+        message: "user not found",
+      });
+    }
+
+    const passvalid = await bcrypt.compare(password, admin.password);
+    if (admin && passvalid) {
+      console.log(chalk.green("Admin with the given email exists"));
+      console.log(chalk.green("The entered password matches."));
+      console.log("entered pass:", password, 10);
+      console.log("hashed password:", admin.password);
+      res.status(200).json({
+        status: 200,
+        Message: `Admin with the given email exists ${email}`,
+        id: admin.id,
+        email: admin.email,
+        token: generateToken(admin.id),
+      });
+    } else {
+      res.status(401).json({
+        status: 401,
+        Message: "Invalid Credentials",
+      });
+    }
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({
+      status: 500,
+      message: "Server error during login",
     });
   }
 };
