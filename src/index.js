@@ -1,5 +1,6 @@
 import express from "express";
 import adminroute from "./routes/adminRoute.js";
+import chalk from "chalk";
 
 const app = express();
 
@@ -16,4 +17,5 @@ app.get("/test", (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`app is running on port ${PORT}`);
+  console.log(chalk.red("http://localhost:3000"));
 });
