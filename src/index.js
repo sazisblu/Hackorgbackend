@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import adminroute from "./routes/adminRoute.js";
+import userroute from "./routes/userRoute.js";
 import chalk from "chalk";
 
 const app = express();
@@ -17,6 +18,7 @@ app.use(
 
 app.use(express.json());
 app.use("/api", adminroute);
+app.use("/api", userroute);
 
 app.get("/test", (req, res) => {
   res.status(200).json({

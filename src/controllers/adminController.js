@@ -65,13 +65,14 @@ export const loginAdmin = async (req, res) => {
         message: "user not found",
       });
     }
-
+    console.log(admin.password);
     const passvalid = await bcrypt.compare(password, admin.password);
     if (admin && passvalid) {
       console.log(chalk.green("Admin with the given email exists"));
       console.log(chalk.green("The entered password matches."));
-      console.log("entered pass:", password, 10);
+      console.log("entered pass:", password);
       console.log("hashed password:", admin.password);
+      console.log("Password valid:", passvalid);
       res.status(200).json({
         status: 200,
         Message: `Admin with the given email exists ${email}`,
