@@ -67,6 +67,11 @@ export const loginAdmin = async (req, res) => {
     }
     console.log(admin.password);
     const passvalid = await bcrypt.compare(password, admin.password);
+
+    if (!passvalid) {
+      console.log(passvalid);
+      console.log("the entered password was incorrect");
+    }
     if (admin && passvalid) {
       console.log(chalk.green("Admin with the given email exists"));
       console.log(chalk.green("The entered password matches."));
