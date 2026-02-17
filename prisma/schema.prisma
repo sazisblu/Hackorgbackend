@@ -19,10 +19,44 @@ model User {
 }
 
 model Admin {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
+  id        Int       @id @default(autoincrement())
+  email     String    @unique
   password  String
   fullname  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  websites  Website[] // Add this relation
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+model Website {
+  id          Int      @id @default(autoincrement())
+  slug        String   @unique  // Unique URL identifier (e.g., "techfest-2024")
+  title       String              // Website/Hackathon title
+  description String?             // Optional description
+  
+  // Website builder data stored as JSON
+  websiteData Json                // Stores all the builder configuration
+  
+  // Ownership & permissions
+  adminId     Int                 // Foreign key to Admin
+  admin       Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  
+  // Status management
+  status      WebsiteStatus @default(DRAFT)  // DRAFT or PUBLISHED
+  
+  // Publication info
+  publishedAt DateTime?           // When it was published
+  viewCount   Int       @default(0)  // Track views (optional)
+  
+  // Timestamps
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@index([slug])
+  @@index([adminId])
+  @@index([status])
+}
+
+enum WebsiteStatus {
+  DRAFT
+  PUBLISHED
 }
