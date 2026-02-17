@@ -3,6 +3,7 @@ import cors from "cors";
 import adminroute from "./routes/adminRoute.js";
 import userroute from "./routes/userRoute.js";
 import mailRoutes from "./routes/mail.js";
+import websiteRoute from "./routes/websiteRoute.js";
 import chalk from "chalk";
 
 const app = express();
@@ -21,7 +22,7 @@ app.use(express.json());
 app.use("/api", adminroute);
 app.use("/api", userroute);
 app.use("/api/mail", mailRoutes);
-
+app.use("/api", websiteRoute);
 app.get("/test", (req, res) => {
   res.status(200).json({
     status: 200,
