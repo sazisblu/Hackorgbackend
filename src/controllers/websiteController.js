@@ -6,7 +6,10 @@ import pg from "pg";
 import "dotenv/config";
 import chalk from "chalk";
 
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+const pool = new pg.Pool({ 
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
 const adapter = new PrismaPg(pool);
 const prisma = new client.PrismaClient({ adapter });
 
