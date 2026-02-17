@@ -1,24 +1,21 @@
 import { Router } from "express";
 const router = Router();
-import transporter from "../config/nodemailer.js";
-
-import { join } from "path";
-import { existsSync } from "fs";
+import resend from "../config/resend.js";
 
 router.post("/send", async (req, res) => {
   const { recipients, subject, message } = req.body;
   console.log("recipients:", recipients);
+
   if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
     return res
       .status(400)
       .json({ success: false, message: "No recipients provided" });
   }
 
-  // Debugging: Check what data is being received
   console.log(
     "Received recipients:",
     JSON.stringify(recipients.slice(0, 3), null, 2),
-  ); // Log first 3
+  );
 
   if (!subject || !message) {
     return res
@@ -31,49 +28,23 @@ router.post("/send", async (req, res) => {
     failed: [],
   };
 
-  // Check for "It Circle" logo usage to embed it
-  let emailHtml = message;
-  const attachments = [];
-  const logoUrl =
-    "https://preview.redd.it/the-original-image-of-the-monkey-thinking-meme-v0-ea1hkdjnx9af1.jpeg?width=1080&crop=smart&auto=webp&s=5fb2b05369bfbffd94d6009a679a9a5fe5e4223f";
-
-  if (emailHtml.includes(logoUrl)) {
-    emailHtml = emailHtml.replace(logoUrl, "cid:it-circle-logo");
-    const logoPath = join(__dirname, "../../client/public/it-circle-logo.png");
-
-    // Only attach if file exists
-    if (existsSync(logoPath)) {
-      attachments.push({
-        filename: "it-circle-logo.png",
-        path: logoPath,
-        cid: "it-circle-logo",
-      });
-    }
-  }
-
-  // Basic helper to strip HTML for the text version
-  const stripHtml = (html) => {
-    return html
-      .replace(/<[^>]*>?/gm, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  };
-
   try {
-    // Iterate and send emails
+    // Send emails using Resend
     for (const recipient of recipients) {
-      const mailOptions = {
-        from: `"Khwopa IT Circle" <${process.env.EMAIL_USER}>`, // Add a nice display name
-        to: recipient.email,
-        subject: subject,
-        text: stripHtml(emailHtml), // Plain text fallback
-        html: emailHtml,
-        attachments: attachments,
-      };
-
       try {
-        await transporter.sendMail(mailOptions);
-        results.success.push(recipient.email);
+        const { data, error } = await resend.emails.send({
+          from: "Team Hack Org <team@hackorg.manee.com.np>", // Use your verified domain or Resend's test domain
+          to: [recipient.email],
+          subject: subject,
+          html: message,
+        });
+
+        if (error) {
+          console.error(`Failed to send to ${recipient.email}:`, error);
+          results.failed.push({ email: recipient.email, error: error.message });
+        } else {
+          results.success.push(recipient.email);
+        }
       } catch (error) {
         console.error(`Failed to send to ${recipient.email}:`, error);
         results.failed.push({ email: recipient.email, error: error.message });
