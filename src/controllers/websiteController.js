@@ -45,6 +45,23 @@ export const saveWebsite = async (req, res) => {
 
     // Check if updating existing website
     if (websiteId) {
+      // First, verify that the website belongs to this admin
+      const existingWebsite = await prisma.website.findUnique({
+        where: { id: parseInt(websiteId) },
+      });
+
+      if (!existingWebsite) {
+        return res.status(404).json({
+          error: "Website not found",
+        });
+      }
+
+      if (existingWebsite.adminId !== parseInt(adminId)) {
+        return res.status(403).json({
+          error: "Forbidden: You don't have permission to update this website",
+        });
+      }
+
       // Update existing website
       const website = await prisma.website.update({
         where: { id: parseInt(websiteId) },
@@ -103,6 +120,51 @@ export const saveWebsite = async (req, res) => {
 
 // Get Website by ID
 export const getWebsite = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { adminId } = req.query; // Optional: pass adminId to verify ownership
+
+    const website = await prisma.website.findUnique({
+      where: { id: parseInt(id) },
+      include: {
+        admin: {
+          select: {
+            id: true,
+            email: true,
+            fullname: true,
+          },
+        },
+      },
+    });
+
+    if (!website) {
+      return res.status(404).json({
+        error: "Website not found",
+      });
+    }
+
+    // If adminId is provided, verify ownership (for private requests)
+    if (adminId && website.adminId !== parseInt(adminId)) {
+      return res.status(403).json({
+        error: "Forbidden: You don't have permission to access this website",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      website: website,
+    });
+  } catch (error) {
+    console.error(chalk.red("Error fetching website:"), error);
+    res.status(500).json({
+      error: "Failed to fetch website",
+      details: error.message,
+    });
+  }
+};
+
+// DEPRECATED: Use getWebsiteWithOwnershipCheck for admin operations
+const getWebsiteOld = async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -200,6 +262,24 @@ export const getAdminWebsites = async (req, res) => {
 export const publishWebsite = async (req, res) => {
   try {
     const { id } = req.params;
+    const { adminId } = req.body; // Get adminId from request body
+
+    // Verify website exists and belongs to this admin
+    const existingWebsite = await prisma.website.findUnique({
+      where: { id: parseInt(id) },
+    });
+
+    if (!existingWebsite) {
+      return res.status(404).json({
+        error: "Website not found",
+      });
+    }
+
+    if (adminId && existingWebsite.adminId !== parseInt(adminId)) {
+      return res.status(403).json({
+        error: "Forbidden: You don't have permission to publish this website",
+      });
+    }
 
     const website = await prisma.website.update({
       where: { id: parseInt(id) },
@@ -228,6 +308,24 @@ export const publishWebsite = async (req, res) => {
 export const unpublishWebsite = async (req, res) => {
   try {
     const { id } = req.params;
+    const { adminId } = req.body; // Get adminId from request body
+
+    // Verify website exists and belongs to this admin
+    const existingWebsite = await prisma.website.findUnique({
+      where: { id: parseInt(id) },
+    });
+
+    if (!existingWebsite) {
+      return res.status(404).json({
+        error: "Website not found",
+      });
+    }
+
+    if (adminId && existingWebsite.adminId !== parseInt(adminId)) {
+      return res.status(403).json({
+        error: "Forbidden: You don't have permission to unpublish this website",
+      });
+    }
 
     const website = await prisma.website.update({
       where: { id: parseInt(id) },
@@ -255,6 +353,24 @@ export const unpublishWebsite = async (req, res) => {
 export const deleteWebsite = async (req, res) => {
   try {
     const { id } = req.params;
+    const { adminId } = req.body; // Get adminId from request body
+
+    // Verify website exists and belongs to this admin
+    const existingWebsite = await prisma.website.findUnique({
+      where: { id: parseInt(id) },
+    });
+
+    if (!existingWebsite) {
+      return res.status(404).json({
+        error: "Website not found",
+      });
+    }
+
+    if (adminId && existingWebsite.adminId !== parseInt(adminId)) {
+      return res.status(403).json({
+        error: "Forbidden: You don't have permission to delete this website",
+      });
+    }
 
     await prisma.website.delete({
       where: { id: parseInt(id) },
