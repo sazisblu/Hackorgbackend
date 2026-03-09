@@ -5,6 +5,8 @@ import userroute from "./routes/userRoute.js";
 import mailRoutes from "./routes/mail.js";
 import websiteRoute from "./routes/websiteRoute.js";
 import registrationRoute from "./routes/registrationRoute.js";
+import mentorRoute from "./routes/mentorRoute.js";
+import statsRoute from "./routes/statsRoute.js";
 import chalk from "chalk";
 
 const app = express();
@@ -25,6 +27,8 @@ app.use("/api", userroute);
 app.use("/api/mail", mailRoutes);
 app.use("/api", websiteRoute);
 app.use("/api/registration", registrationRoute);
+app.use("/api/mentor", mentorRoute);
+app.use("/api", statsRoute);
 app.get("/test", (req, res) => {
   res.status(200).json({
     status: 200,

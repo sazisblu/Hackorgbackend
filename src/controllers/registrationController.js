@@ -149,17 +149,113 @@ export const getWebsiteRegistrations = async (req, res) => {
           },
         },
       },
+      orderBy: {
+        registeredAt: 'desc',
+      },
     });
 
-    res.status(200).json({ 
-      success: true, 
-      registrations 
+    res.status(200).json({
+      success: true,
+      registrations
     });
   } catch (error) {
     console.error("Error fetching registrations:", error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+// Get all registrations for a website by slug
+export const getRegistrationsBySlug = async (req, res) => {
+  const { slug } = req.params;
+
+  try {
+    // First find the website by slug
+    const website = await prisma.website.findUnique({
+      where: { slug },
+      select: { id: true },
+    });
+
+    if (!website) {
+      return res.status(404).json({
+        success: false,
+        error: "Website not found",
+      });
+    }
+
+    // Get registrations with user data
+    const registrations = await prisma.registration.findMany({
+      where: { websiteId: website.id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            image: true,
+            githubUsername: true,
+          },
+        },
+      },
+      orderBy: {
+        registeredAt: 'desc',
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      registrations,
+    });
+  } catch (error) {
+    console.error("Error fetching registrations by slug:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+};
+
+// Update registration status
+export const updateRegistrationStatus = async (req, res) => {
+  const { registrationId } = req.params;
+  const { status } = req.body;
+
+  if (!['PENDING', 'APPROVED', 'REJECTED'].includes(status)) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid status. Must be PENDING, APPROVED, or REJECTED",
+    });
+  }
+
+  try {
+    const registration = await prisma.registration.update({
+      where: { id: parseInt(registrationId) },
+      data: { status },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            image: true,
+            githubUsername: true,
+          },
+        },
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      registration,
+      message: "Registration status updated successfully",
+    });
+  } catch (error) {
+    console.error("Error updating registration status:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
     });
   }
 };

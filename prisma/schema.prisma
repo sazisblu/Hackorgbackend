@@ -33,28 +33,31 @@ model Website {
   slug        String        @unique  // Unique URL identifier (e.g., "techfest-2024")
   title       String                 // Website/Hackathon title
   description String?                // Optional description
-  
+
   // Website builder data stored as JSON
   websiteData Json                   // Stores all the builder configuration
-  
+
   // Ownership & permissions
   adminId     Int                    // Foreign key to Admin
   admin       Admin         @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  
+
   // User registrations
   registrations Registration[]       // Users registered in this website
-  
+
+  // Mentors for this hackathon
+  mentors     Mentor[]               // Mentors assigned to this hackathon
+
   // Status management
   status      WebsiteStatus @default(DRAFT)  // DRAFT or PUBLISHED
-  
+
   // Publication info
   publishedAt DateTime?              // When it was published
   viewCount   Int           @default(0)  // Track views (optional)
-  
+
   // Timestamps
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
-  
+
   @@index([slug])
   @@index([adminId])
   @@index([status])
@@ -89,4 +92,35 @@ enum RegistrationStatus {
   PENDING
   APPROVED
   REJECTED
+}
+
+// Mentor model for hackathon mentors
+model Mentor {
+  id          Int      @id @default(autoincrement())
+  name        String
+  email       String?
+  image       String?           // Profile photo URL
+  title       String?           // e.g., "Senior Engineer at Google"
+  bio         String?           // Short bio/description
+  expertise   String[]          // Array of expertise areas: ["AI/ML", "Web Development"]
+  linkedin    String?           // LinkedIn URL
+  github      String?           // GitHub username
+
+  // Link to website (hackathon)
+  websiteId   Int
+  website     Website  @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  // Status
+  status      MentorStatus @default(ACTIVE)
+
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([websiteId])
+}
+
+enum MentorStatus {
+  ACTIVE
+  INACTIVE
 }
