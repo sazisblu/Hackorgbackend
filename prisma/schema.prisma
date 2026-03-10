@@ -25,6 +25,7 @@ model Admin {
   password  String
   fullname  String
   websites  Website[] // Add this relation
+  entitlementClaims ParticipantEntitlement[] // Entitlement claims made by this admin
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 }
@@ -46,6 +47,9 @@ model Website {
 
   // Mentors for this hackathon
   mentors     Mentor[]               // Mentors assigned to this hackathon
+
+  // Entitlements for this hackathon
+  entitlements Entitlement[]
 
   // Status management
   status      WebsiteStatus @default(DRAFT)  // DRAFT or PUBLISHED
@@ -73,19 +77,26 @@ model Registration {
   id          Int      @id @default(autoincrement())
   userId      Int
   websiteId   Int
-  
+
   // Relations
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   website     Website  @relation(fields: [websiteId], references: [id], onDelete: Cascade)
-  
+
   // Registration metadata
   registeredAt DateTime @default(now())
   status      RegistrationStatus @default(PENDING)
-  
+
+  // QR Code identifier for entitlement verification
+  qrIdentifier String? @unique // Generated when participant is approved
+
+  // Entitlement claims for this registration
+  entitlements ParticipantEntitlement[]
+
   // Make sure a user can only register once per website
   @@unique([userId, websiteId])
   @@index([userId])
   @@index([websiteId])
+  @@index([qrIdentifier])
 }
 
 enum RegistrationStatus {
@@ -123,4 +134,43 @@ model Mentor {
 enum MentorStatus {
   ACTIVE
   INACTIVE
+}
+
+// Entitlement types for a hackathon (e.g., Breakfast, Lunch, Certificate)
+model Entitlement {
+  id          Int                   @id @default(autoincrement())
+  name        String                // e.g., "Breakfast", "Lunch", "Certificate"
+  description String?
+  websiteId   Int                   // Link to hackathon
+  website     Website               @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  // Track which participants received this entitlement
+  claims      ParticipantEntitlement[]
+
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@unique([name, websiteId]) // Prevent duplicate entitlement names per hackathon
+  @@index([websiteId])
+}
+
+// Junction table tracking entitlement claims
+model ParticipantEntitlement {
+  id             Int           @id @default(autoincrement())
+  registrationId Int
+  entitlementId  Int
+
+  // Relations
+  registration   Registration  @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  entitlement    Entitlement   @relation(fields: [entitlementId], references: [id], onDelete: Cascade)
+
+  // Claim metadata
+  claimedAt      DateTime      @default(now())
+  claimedBy      Int           // Admin ID who verified/scanned
+  admin          Admin         @relation(fields: [claimedBy], references: [id])
+
+  // Each participant can claim each entitlement only once
+  @@unique([registrationId, entitlementId])
+  @@index([registrationId])
+  @@index([entitlementId])
 }

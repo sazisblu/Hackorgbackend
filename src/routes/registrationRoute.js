@@ -5,6 +5,7 @@ import {
   getWebsiteRegistrations,
   getRegistrationsBySlug,
   updateRegistrationStatus,
+  getRegistrationById,
 } from "../controllers/registrationController.js";
 
 const router = express.Router();
@@ -20,6 +21,9 @@ router.get("/website/:websiteId", getWebsiteRegistrations);
 
 // Get all registrations for a website by slug
 router.get("/slug/:slug", getRegistrationsBySlug);
+
+// Get a single registration by ID
+router.get("/:registrationId", getRegistrationById);
 
 // Update registration status
 router.patch("/:registrationId/status", updateRegistrationStatus);

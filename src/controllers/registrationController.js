@@ -2,10 +2,17 @@ import * as client from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 import "dotenv/config";
+import crypto from "crypto";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new client.PrismaClient({ adapter });
+
+// Generate a unique QR identifier
+const generateQRIdentifier = (websiteId, userId) => {
+  const random = crypto.randomBytes(4).toString('hex').toUpperCase();
+  return `HO-${websiteId}-${userId}-${random}`;
+};
 
 // Register a user to a website
 export const registerUserToWebsite = async (req, res) => {
@@ -230,9 +237,33 @@ export const updateRegistrationStatus = async (req, res) => {
   }
 
   try {
+    // First get the current registration to check if we need to generate QR
+    const currentRegistration = await prisma.registration.findUnique({
+      where: { id: parseInt(registrationId) },
+      select: { status: true, qrIdentifier: true, websiteId: true, userId: true },
+    });
+
+    if (!currentRegistration) {
+      return res.status(404).json({
+        success: false,
+        error: "Registration not found",
+      });
+    }
+
+    // Prepare update data
+    const updateData = { status };
+
+    // Generate QR identifier if approving and doesn't have one
+    if (status === 'APPROVED' && !currentRegistration.qrIdentifier) {
+      updateData.qrIdentifier = generateQRIdentifier(
+        currentRegistration.websiteId,
+        currentRegistration.userId
+      );
+    }
+
     const registration = await prisma.registration.update({
       where: { id: parseInt(registrationId) },
-      data: { status },
+      data: updateData,
       include: {
         user: {
           select: {
@@ -249,10 +280,58 @@ export const updateRegistrationStatus = async (req, res) => {
     res.status(200).json({
       success: true,
       registration,
+      qrIdentifier: registration.qrIdentifier,
       message: "Registration status updated successfully",
     });
   } catch (error) {
     console.error("Error updating registration status:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+};
+
+// Get a single registration by ID
+export const getRegistrationById = async (req, res) => {
+  const { registrationId } = req.params;
+
+  try {
+    const registration = await prisma.registration.findUnique({
+      where: { id: parseInt(registrationId) },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            image: true,
+            githubUsername: true,
+          },
+        },
+        website: {
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+          },
+        },
+      },
+    });
+
+    if (!registration) {
+      return res.status(404).json({
+        success: false,
+        error: "Registration not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      registration,
+    });
+  } catch (error) {
+    console.error("Error fetching registration:", error);
     res.status(500).json({
       success: false,
       error: error.message,
