@@ -9,7 +9,8 @@
     "dev": "nodemon src/index.js",
     "build": "prisma generate",
     "start": "node src/index.js",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "migrate:deploy": "prisma migrate deploy --schema=./prisma/schema.prisma"
   },
   "keywords": [],
   "author": "",
