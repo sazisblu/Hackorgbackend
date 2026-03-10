@@ -5,6 +5,7 @@ import {
   saveWebsite,
   getWebsite,
   getWebsiteBySlug,
+  getWebsiteByHackathon,
   getAdminWebsites,
   publishWebsite,
   unpublishWebsite,
@@ -21,6 +22,9 @@ router.get("/website/:id", getWebsite);
 
 // Get website by slug (for public viewing)
 router.get("/website/slug/:slug", getWebsiteBySlug);
+
+// Get website by hackathon ID
+router.get("/website/hackathon/:hackathonId", getWebsiteByHackathon);
 
 // Get all websites for an admin
 router.get("/websites/admin/:adminId", getAdminWebsites);

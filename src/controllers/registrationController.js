@@ -9,41 +9,41 @@ const adapter = new PrismaPg(pool);
 const prisma = new client.PrismaClient({ adapter });
 
 // Generate a unique QR identifier
-const generateQRIdentifier = (websiteId, userId) => {
+const generateQRIdentifier = (hackathonId, userId) => {
   const random = crypto.randomBytes(4).toString('hex').toUpperCase();
-  return `HO-${websiteId}-${userId}-${random}`;
+  return `HO-${hackathonId}-${userId}-${random}`;
 };
 
-// Register a user to a website
-export const registerUserToWebsite = async (req, res) => {
+// Register a user to a hackathon (primary method)
+export const registerUserToHackathon = async (req, res) => {
   console.log("Registration request body:", req.body);
 
-  const { userId, websiteId, slug } = req.body;
+  const { userId, hackathonId, joinCode } = req.body;
 
   try {
-    // If slug is provided instead of websiteId, fetch the website first
-    let finalWebsiteId = websiteId;
-    
-    if (!finalWebsiteId && slug) {
-      const website = await prisma.website.findUnique({
-        where: { slug },
-        select: { id: true },
+    let finalHackathonId = hackathonId;
+
+    // If joinCode is provided instead of hackathonId, fetch the hackathon
+    if (!finalHackathonId && joinCode) {
+      const hackathon = await prisma.hackathon.findUnique({
+        where: { joinCode: joinCode.toUpperCase() },
+        select: { id: true, name: true },
       });
-      
-      if (!website) {
-        return res.status(404).json({ 
-          success: false, 
-          error: "Website not found" 
+
+      if (!hackathon) {
+        return res.status(404).json({
+          success: false,
+          error: "Invalid join code"
         });
       }
-      
-      finalWebsiteId = website.id;
+
+      finalHackathonId = hackathon.id;
     }
 
-    if (!userId || !finalWebsiteId) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "userId and websiteId (or slug) are required" 
+    if (!userId || !finalHackathonId) {
+      return res.status(400).json({
+        success: false,
+        error: "userId and hackathonId (or joinCode) are required"
       });
     }
 
@@ -53,55 +53,219 @@ export const registerUserToWebsite = async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        error: "User not found" 
+      return res.status(404).json({
+        success: false,
+        error: "User not found"
+      });
+    }
+
+    // Check if hackathon exists and get its website
+    const hackathon = await prisma.hackathon.findUnique({
+      where: { id: parseInt(finalHackathonId) },
+      include: { website: { select: { id: true } } },
+    });
+
+    if (!hackathon) {
+      return res.status(404).json({
+        success: false,
+        error: "Hackathon not found"
+      });
+    }
+
+    // Check for existing registration by hackathonId
+    const existingRegistration = await prisma.registration.findFirst({
+      where: {
+        userId: parseInt(userId),
+        hackathonId: parseInt(finalHackathonId),
+      },
+    });
+
+    if (existingRegistration) {
+      return res.status(200).json({
+        success: true,
+        registration: existingRegistration,
+        message: "User already registered to this hackathon"
+      });
+    }
+
+    // Create new registration
+    const registration = await prisma.registration.create({
+      data: {
+        userId: parseInt(userId),
+        hackathonId: parseInt(finalHackathonId),
+        websiteId: hackathon.website?.id || null,
+        status: "PENDING",
+      },
+    });
+
+    console.log("Registration created:", registration);
+
+    res.status(201).json({
+      success: true,
+      registration,
+      hackathon: {
+        id: hackathon.id,
+        name: hackathon.name,
+      },
+      message: "User registered to hackathon successfully"
+    });
+  } catch (error) {
+    console.error("Registration error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+// Legacy: Register a user to a website (backward compatibility)
+export const registerUserToWebsite = async (req, res) => {
+  console.log("Registration request body:", req.body);
+
+  const { userId, websiteId, slug, hackathonId } = req.body;
+
+  try {
+    // New system: use hackathonId if provided
+    if (hackathonId) {
+      return registerUserToHackathon(req, res);
+    }
+
+    // Legacy: If slug is provided instead of websiteId, fetch the website first
+    let finalWebsiteId = websiteId;
+
+    if (!finalWebsiteId && slug) {
+      const website = await prisma.website.findUnique({
+        where: { slug },
+        select: { id: true, hackathon: { select: { id: true } } },
+      });
+
+      if (!website) {
+        return res.status(404).json({
+          success: false,
+          error: "Website not found"
+        });
+      }
+
+      finalWebsiteId = website.id;
+
+      // If this website is linked to a hackathon, use the new registration method
+      if (website.hackathon) {
+        req.body.hackathonId = website.hackathon.id;
+        return registerUserToHackathon(req, res);
+      }
+    }
+
+    if (!userId || !finalWebsiteId) {
+      return res.status(400).json({
+        success: false,
+        error: "userId and websiteId (or slug) are required"
+      });
+    }
+
+    // Check if user exists
+    const user = await prisma.user.findUnique({
+      where: { id: parseInt(userId) },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found"
       });
     }
 
     // Check if website exists
     const website = await prisma.website.findUnique({
       where: { id: parseInt(finalWebsiteId) },
+      include: { hackathon: { select: { id: true } } },
     });
 
     if (!website) {
-      return res.status(404).json({ 
-        success: false, 
-        error: "Website not found" 
+      return res.status(404).json({
+        success: false,
+        error: "Website not found"
       });
     }
 
-    // Create or update registration
-    const registration = await prisma.registration.upsert({
+    // If website is linked to a hackathon, include hackathonId
+    const registrationData = {
+      userId: parseInt(userId),
+      websiteId: parseInt(finalWebsiteId),
+      status: "PENDING",
+    };
+
+    if (website.hackathon) {
+      registrationData.hackathonId = website.hackathon.id;
+    }
+
+    // Check for existing registration
+    const existingReg = await prisma.registration.findFirst({
       where: {
-        userId_websiteId: {
-          userId: parseInt(userId),
-          websiteId: parseInt(finalWebsiteId),
-        },
-      },
-      update: {
-        // Update timestamp if already exists
-        registeredAt: new Date(),
-      },
-      create: {
         userId: parseInt(userId),
         websiteId: parseInt(finalWebsiteId),
-        status: "PENDING",
       },
     });
+
+    let registration;
+    if (existingReg) {
+      registration = await prisma.registration.update({
+        where: { id: existingReg.id },
+        data: { registeredAt: new Date() },
+      });
+    } else {
+      registration = await prisma.registration.create({
+        data: registrationData,
+      });
+    }
 
     console.log("Registration created/updated:", registration);
 
-    res.status(200).json({ 
-      success: true, 
+    res.status(200).json({
+      success: true,
       registration,
-      message: "User registered to website successfully" 
+      message: "User registered to website successfully"
     });
   } catch (error) {
     console.error("Registration error:", error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+// Get all registrations for a hackathon
+export const getHackathonRegistrations = async (req, res) => {
+  const { hackathonId } = req.params;
+
+  try {
+    const registrations = await prisma.registration.findMany({
+      where: { hackathonId: parseInt(hackathonId) },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            image: true,
+            githubUsername: true,
+          },
+        },
+      },
+      orderBy: {
+        registeredAt: 'desc',
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      registrations
+    });
+  } catch (error) {
+    console.error("Error fetching registrations:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 };
@@ -114,6 +278,13 @@ export const getUserRegistrations = async (req, res) => {
     const registrations = await prisma.registration.findMany({
       where: { userId: parseInt(userId) },
       include: {
+        hackathon: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+          },
+        },
         website: {
           select: {
             id: true,
@@ -125,20 +296,20 @@ export const getUserRegistrations = async (req, res) => {
       },
     });
 
-    res.status(200).json({ 
-      success: true, 
-      registrations 
+    res.status(200).json({
+      success: true,
+      registrations
     });
   } catch (error) {
     console.error("Error fetching registrations:", error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 };
 
-// Get all registrations for a website
+// Get all registrations for a website (legacy)
 export const getWebsiteRegistrations = async (req, res) => {
   const { websiteId } = req.params;
 
@@ -182,7 +353,10 @@ export const getRegistrationsBySlug = async (req, res) => {
     // First find the website by slug
     const website = await prisma.website.findUnique({
       where: { slug },
-      select: { id: true },
+      select: {
+        id: true,
+        hackathon: { select: { id: true } },
+      },
     });
 
     if (!website) {
@@ -192,9 +366,14 @@ export const getRegistrationsBySlug = async (req, res) => {
       });
     }
 
+    // If website has hackathon, get registrations by hackathonId
+    const whereClause = website.hackathon
+      ? { hackathonId: website.hackathon.id }
+      : { websiteId: website.id };
+
     // Get registrations with user data
     const registrations = await prisma.registration.findMany({
-      where: { websiteId: website.id },
+      where: whereClause,
       include: {
         user: {
           select: {
@@ -240,7 +419,7 @@ export const updateRegistrationStatus = async (req, res) => {
     // First get the current registration to check if we need to generate QR
     const currentRegistration = await prisma.registration.findUnique({
       where: { id: parseInt(registrationId) },
-      select: { status: true, qrIdentifier: true, websiteId: true, userId: true },
+      select: { status: true, qrIdentifier: true, hackathonId: true, websiteId: true, userId: true },
     });
 
     if (!currentRegistration) {
@@ -255,10 +434,8 @@ export const updateRegistrationStatus = async (req, res) => {
 
     // Generate QR identifier if approving and doesn't have one
     if (status === 'APPROVED' && !currentRegistration.qrIdentifier) {
-      updateData.qrIdentifier = generateQRIdentifier(
-        currentRegistration.websiteId,
-        currentRegistration.userId
-      );
+      const qrId = currentRegistration.hackathonId || currentRegistration.websiteId;
+      updateData.qrIdentifier = generateQRIdentifier(qrId, currentRegistration.userId);
     }
 
     const registration = await prisma.registration.update({
@@ -307,6 +484,13 @@ export const getRegistrationById = async (req, res) => {
             name: true,
             image: true,
             githubUsername: true,
+          },
+        },
+        hackathon: {
+          select: {
+            id: true,
+            name: true,
+            joinCode: true,
           },
         },
         website: {

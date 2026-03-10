@@ -22,76 +22,95 @@ export const getAdminStats = async (req, res) => {
         hackathon: {
           include: {
             website: {
-              include: {
-                registrations: {
+              select: {
+                id: true,
+                title: true,
+                slug: true,
+                status: true,
+                viewCount: true,
+                publishedAt: true,
+              },
+            },
+            registrations: {
+              select: {
+                id: true,
+                status: true,
+                registeredAt: true,
+                user: {
                   select: {
-                    id: true,
-                    status: true,
-                    registeredAt: true,
-                    user: {
-                      select: {
-                        name: true,
-                        email: true,
-                      },
-                    },
+                    name: true,
+                    email: true,
                   },
-                  orderBy: { registeredAt: 'desc' },
                 },
               },
+              orderBy: { registeredAt: 'desc' },
             },
           },
         },
       },
     });
 
-    // Extract websites from hackathons
-    const websites = adminHackathons
-      .map(ah => ah.hackathon.website)
-      .filter(w => w !== null);
-
     // Calculate summary stats
     const totalHackathons = adminHackathons.length;
-    const publishedHackathons = websites.filter(w => w.status === 'PUBLISHED').length;
-    const draftHackathons = websites.filter(w => w.status === 'DRAFT').length;
+    const hackathonsWithWebsite = adminHackathons.filter(ah => ah.hackathon.website);
+    const publishedHackathons = hackathonsWithWebsite.filter(ah => ah.hackathon.website?.status === 'PUBLISHED').length;
+    const draftHackathons = totalHackathons - publishedHackathons;
 
-    const allRegistrations = websites.flatMap(w => w.registrations);
+    // Get all registrations from hackathons (primary source)
+    const allRegistrations = adminHackathons.flatMap(ah =>
+      (ah.hackathon.registrations || []).map(r => ({
+        ...r,
+        hackathonName: ah.hackathon.name,
+        hackathonId: ah.hackathon.id,
+        website: ah.hackathon.website,
+      }))
+    );
+
     const totalParticipants = allRegistrations.length;
     const pendingRegistrations = allRegistrations.filter(r => r.status === 'PENDING').length;
     const approvedRegistrations = allRegistrations.filter(r => r.status === 'APPROVED').length;
     const rejectedRegistrations = allRegistrations.filter(r => r.status === 'REJECTED').length;
 
-    // Try to get mentors count, default to 0 if table doesn't exist
+    // Try to get mentors count
     let totalMentors = 0;
     let activeMentors = 0;
     try {
-      const mentors = await prisma.mentor.findMany({
-        where: {
-          websiteId: { in: websites.map(w => w.id) }
-        },
-        select: { id: true, status: true }
-      });
-      totalMentors = mentors.length;
-      activeMentors = mentors.filter(m => m.status === 'ACTIVE').length;
+      const websiteIds = hackathonsWithWebsite
+        .map(ah => ah.hackathon.website?.id)
+        .filter(id => id !== undefined);
+
+      if (websiteIds.length > 0) {
+        const mentors = await prisma.mentor.findMany({
+          where: { websiteId: { in: websiteIds } },
+          select: { id: true, status: true }
+        });
+        totalMentors = mentors.length;
+        activeMentors = mentors.filter(m => m.status === 'ACTIVE').length;
+      }
     } catch (mentorError) {
       console.log("Mentor table not found, skipping mentor stats");
     }
 
     // Format hackathons list
     const hackathonsList = adminHackathons.map(ah => {
-      const website = ah.hackathon.website;
+      const hackathon = ah.hackathon;
+      const website = hackathon.website;
+      const registrations = hackathon.registrations || [];
+
       return {
-        id: ah.hackathon.id,
-        name: ah.hackathon.name,
-        title: website?.title || ah.hackathon.name,
+        id: hackathon.id,
+        name: hackathon.name,
+        title: website?.title || hackathon.name,
         slug: website?.slug || '',
         status: website?.status || 'DRAFT',
         viewCount: website?.viewCount || 0,
-        participantCount: website?.registrations?.length || 0,
-        mentorCount: 0, // Will be updated if mentor table exists
-        pendingCount: website?.registrations?.filter(r => r.status === 'PENDING').length || 0,
+        participantCount: registrations.length,
+        pendingCount: registrations.filter(r => r.status === 'PENDING').length,
+        approvedCount: registrations.filter(r => r.status === 'APPROVED').length,
         role: ah.role,
-        createdAt: ah.hackathon.createdAt,
-        updatedAt: ah.hackathon.updatedAt,
+        joinCode: hackathon.joinCode,
+        createdAt: hackathon.createdAt,
+        updatedAt: hackathon.updatedAt,
         publishedAt: website?.publishedAt || null,
       };
     });
@@ -100,18 +119,15 @@ export const getAdminStats = async (req, res) => {
     const recentRegistrations = allRegistrations
       .sort((a, b) => new Date(b.registeredAt).getTime() - new Date(a.registeredAt).getTime())
       .slice(0, 10)
-      .map(r => {
-        const website = websites.find(w => w.registrations.some(reg => reg.id === r.id));
-        return {
-          id: r.id,
-          userName: r.user?.name || 'Unknown',
-          userEmail: r.user?.email || '',
-          status: r.status,
-          registeredAt: r.registeredAt,
-          hackathonTitle: website?.title || 'Unknown',
-          hackathonSlug: website?.slug || '',
-        };
-      });
+      .map(r => ({
+        id: r.id,
+        userName: r.user?.name || 'Unknown',
+        userEmail: r.user?.email || '',
+        status: r.status,
+        registeredAt: r.registeredAt,
+        hackathonTitle: r.hackathonName,
+        hackathonSlug: r.website?.slug || '',
+      }));
 
     // Calculate registration trends (by month for current year)
     const currentYear = new Date().getFullYear();

@@ -5,26 +5,36 @@ import "dotenv/config";
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false },
 });
 const adapter = new PrismaPg(pool);
 const prisma = new client.PrismaClient({ adapter });
 
+// Generate unique slug from name
+const generateSlug = (name) => {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+};
+
 // Generate a unique 8-character alphanumeric join code
 const generateUniqueJoinCode = async () => {
-  const characters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed confusing chars like I, O, 0, 1
-  let joinCode = '';
+  const characters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Removed confusing chars like I, O, 0, 1
+  let joinCode = "";
   let isUnique = false;
 
   while (!isUnique) {
-    joinCode = '';
+    joinCode = "";
     for (let i = 0; i < 8; i++) {
-      joinCode += characters.charAt(Math.floor(Math.random() * characters.length));
+      joinCode += characters.charAt(
+        Math.floor(Math.random() * characters.length),
+      );
     }
 
     // Check if code already exists
     const existing = await prisma.hackathon.findUnique({
-      where: { joinCode }
+      where: { joinCode },
     });
 
     if (!existing) {
@@ -35,7 +45,7 @@ const generateUniqueJoinCode = async () => {
   return joinCode;
 };
 
-// Create a new hackathon
+// Create a new hackathon with website
 export const createHackathon = async (req, res) => {
   const { adminId, name, description } = req.body;
 
@@ -50,14 +60,37 @@ export const createHackathon = async (req, res) => {
     // Generate unique join code
     const joinCode = await generateUniqueJoinCode();
 
-    // Create hackathon and add admin as owner in a transaction
-    const hackathon = await prisma.$transaction(async (tx) => {
-      // Create the hackathon
+    // Generate unique slug for website
+    let slug = generateSlug(name);
+    let counter = 1;
+    while (await prisma.website.findUnique({ where: { slug } })) {
+      slug = `${generateSlug(name)}-${counter}`;
+      counter++;
+    }
+
+    // Create hackathon, website, and add admin as owner in a transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // Create the website with hackathon name as default
+      const website = await tx.website.create({
+        data: {
+          slug,
+          title: name, // Default website name is hackathon name
+          description: description || null,
+          websiteData: {
+            eventName: name,
+            description: description || "",
+          },
+          status: "DRAFT",
+        },
+      });
+
+      // Create the hackathon linked to the website
       const newHackathon = await tx.hackathon.create({
         data: {
           name,
           description: description || null,
           joinCode,
+          websiteId: website.id,
         },
       });
 
@@ -66,21 +99,26 @@ export const createHackathon = async (req, res) => {
         data: {
           adminId: parseInt(adminId),
           hackathonId: newHackathon.id,
-          role: 'OWNER',
+          role: "OWNER",
         },
       });
 
-      return newHackathon;
+      return { hackathon: newHackathon, website };
     });
 
     res.status(201).json({
       success: true,
       hackathon: {
-        id: hackathon.id,
-        name: hackathon.name,
-        description: hackathon.description,
-        joinCode: hackathon.joinCode,
-        createdAt: hackathon.createdAt,
+        id: result.hackathon.id,
+        name: result.hackathon.name,
+        description: result.hackathon.description,
+        joinCode: result.hackathon.joinCode,
+        website: {
+          id: result.website.id,
+          title: result.website.title,
+          slug: result.website.slug,
+        },
+        createdAt: result.hackathon.createdAt,
       },
     });
   } catch (error) {
@@ -104,9 +142,18 @@ export const joinHackathon = async (req, res) => {
   }
 
   try {
-    // Find hackathon by join code
+    // Find hackathon by join code with website
     const hackathon = await prisma.hackathon.findUnique({
       where: { joinCode: joinCode.toUpperCase() },
+      include: {
+        website: {
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+          },
+        },
+      },
     });
 
     if (!hackathon) {
@@ -138,7 +185,7 @@ export const joinHackathon = async (req, res) => {
       data: {
         adminId: parseInt(adminId),
         hackathonId: hackathon.id,
-        role: 'MEMBER',
+        role: "MEMBER",
       },
     });
 
@@ -149,6 +196,7 @@ export const joinHackathon = async (req, res) => {
         name: hackathon.name,
         description: hackathon.description,
         joinCode: hackathon.joinCode,
+        website: hackathon.website,
       },
     });
   } catch (error) {
@@ -181,7 +229,7 @@ export const getMyHackathons = async (req, res) => {
           },
         },
       },
-      orderBy: { joinedAt: 'desc' },
+      orderBy: { joinedAt: "desc" },
     });
 
     const hackathons = adminHackathons.map((ah) => ({
@@ -210,7 +258,7 @@ export const getMyHackathons = async (req, res) => {
 // Get hackathon details by ID
 export const getHackathonById = async (req, res) => {
   const { id } = req.params;
-  const adminId = parseInt(req.headers['x-admin-id']);
+  const adminId = parseInt(req.headers["x-admin-id"]);
 
   try {
     const hackathon = await prisma.hackathon.findUnique({
@@ -239,7 +287,7 @@ export const getHackathonById = async (req, res) => {
     }
 
     // Check if the requesting admin is a member
-    const membership = hackathon.admins.find(ah => ah.adminId === adminId);
+    const membership = hackathon.admins.find((ah) => ah.adminId === adminId);
     if (!membership) {
       return res.status(403).json({
         success: false,
@@ -255,7 +303,7 @@ export const getHackathonById = async (req, res) => {
         description: hackathon.description,
         joinCode: hackathon.joinCode,
         website: hackathon.website,
-        admins: hackathon.admins.map(ah => ({
+        admins: hackathon.admins.map((ah) => ({
           id: ah.admin.id,
           fullname: ah.admin.fullname,
           email: ah.admin.email,

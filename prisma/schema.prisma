@@ -45,6 +45,7 @@ model Hackathon {
   websiteId   Int?             @unique // Optional link to Website builder
   website     Website?         @relation(fields: [websiteId], references: [id])
   admins      AdminHackathon[] // Many-to-many with Admin
+  registrations Registration[] // Participants registered to this hackathon (optional)
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
@@ -81,8 +82,8 @@ model Website {
   // Link to Hackathon (optional - for new hackathon system)
   hackathon   Hackathon?             // The hackathon this website belongs to
 
-  // User registrations
-  registrations Registration[]       // Users registered in this website
+  // User registrations (legacy - now linked to Hackathon)
+  registrations Registration[]       // Users registered in this website (optional)
 
   // Mentors for this hackathon
   mentors     Mentor[]               // Mentors assigned to this hackathon
@@ -111,15 +112,17 @@ enum WebsiteStatus {
   PUBLISHED
 }
 
-// Junction table for User-Website many-to-many relationship
+// Junction table for User-Hackathon registration relationship
 model Registration {
   id          Int      @id @default(autoincrement())
   userId      Int
-  websiteId   Int
+  hackathonId Int?     // Primary link to hackathon (new system) - optional for migration
+  websiteId   Int?     // Legacy link to website (backward compatibility)
 
   // Relations
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  website     Website  @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  hackathon   Hackathon? @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+  website     Website? @relation(fields: [websiteId], references: [id], onDelete: Cascade)
 
   // Registration metadata
   registeredAt DateTime @default(now())
@@ -131,9 +134,9 @@ model Registration {
   // Entitlement claims for this registration
   entitlements ParticipantEntitlement[]
 
-  // Make sure a user can only register once per website
-  @@unique([userId, websiteId])
+  // Unique constraint on userId + hackathonId (when hackathonId is set)
   @@index([userId])
+  @@index([hackathonId])
   @@index([websiteId])
   @@index([qrIdentifier])
 }
