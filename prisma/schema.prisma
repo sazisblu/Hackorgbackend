@@ -19,15 +19,51 @@ model User {
   updatedAt      DateTime      @updatedAt
 }
 
+enum AdminRole {
+  OWNER
+  MEMBER
+}
+
 model Admin {
   id        Int       @id @default(autoincrement())
   email     String    @unique
   password  String
   fullname  String
-  websites  Website[] // Add this relation
+  websites  Website[] // Legacy relation for backward compatibility
+  hackathons AdminHackathon[] // Many-to-many with Hackathon
+  onboardingCompleted Boolean @default(false)
   entitlementClaims ParticipantEntitlement[] // Entitlement claims made by this admin
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+}
+
+model Hackathon {
+  id          Int              @id @default(autoincrement())
+  name        String
+  description String?
+  joinCode    String           @unique  // Unique code for joining
+  websiteId   Int?             @unique // Optional link to Website builder
+  website     Website?         @relation(fields: [websiteId], references: [id])
+  admins      AdminHackathon[] // Many-to-many with Admin
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([joinCode])
+}
+
+model AdminHackathon {
+  id          Int       @id @default(autoincrement())
+  adminId     Int
+  hackathonId Int
+  role        AdminRole @default(OWNER)  // OWNER or MEMBER
+  joinedAt    DateTime  @default(now())
+
+  admin       Admin     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  hackathon   Hackathon @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+
+  @@unique([adminId, hackathonId])
+  @@index([adminId])
+  @@index([hackathonId])
 }
 model Website {
   id          Int           @id @default(autoincrement())
@@ -38,9 +74,12 @@ model Website {
   // Website builder data stored as JSON
   websiteData Json                   // Stores all the builder configuration
 
-  // Ownership & permissions
-  adminId     Int                    // Foreign key to Admin
-  admin       Admin         @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  // Ownership & permissions (keeping for backward compatibility)
+  adminId     Int?                   // Foreign key to Admin (nullable for new hackathon system)
+  admin       Admin?         @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  // Link to Hackathon (optional - for new hackathon system)
+  hackathon   Hackathon?             // The hackathon this website belongs to
 
   // User registrations
   registrations Registration[]       // Users registered in this website

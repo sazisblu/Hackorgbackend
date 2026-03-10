@@ -43,7 +43,10 @@ export const createAdmin = async (req, res) => {
     });
 
     console.log("Admin created successfully:", admin.id);
-    res.status(201).json(admin);
+    res.status(201).json({
+      ...admin,
+      onboardingCompleted: false,
+    });
   } catch (error) {
     console.error("Error creating admin:", error);
     res.status(400).json({
@@ -84,6 +87,7 @@ export const loginAdmin = async (req, res) => {
         id: admin.id,
         email: admin.email,
         fullname: admin.fullname,
+        onboardingCompleted: admin.onboardingCompleted,
         token: generateToken(admin.id),
       });
     } else {

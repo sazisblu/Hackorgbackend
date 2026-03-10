@@ -8,6 +8,7 @@ import registrationRoute from "./routes/registrationRoute.js";
 import mentorRoute from "./routes/mentorRoute.js";
 import statsRoute from "./routes/statsRoute.js";
 import entitlementRoute from "./routes/entitlementRoute.js";
+import hackathonRoute from "./routes/hackathonRoute.js";
 import chalk from "chalk";
 
 const app = express();
@@ -31,6 +32,7 @@ app.use("/api/registration", registrationRoute);
 app.use("/api/mentor", mentorRoute);
 app.use("/api", statsRoute);
 app.use("/api", entitlementRoute);
+app.use("/api", hackathonRoute);
 app.get("/test", (req, res) => {
   res.status(200).json({
     status: 200,
