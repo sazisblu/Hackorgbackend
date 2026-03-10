@@ -11,7 +11,7 @@ const adapter = new PrismaPg(pool);
 const prisma = new client.PrismaClient({ adapter });
 
 // Generate a unique 8-character alphanumeric join code
-const generateUniqueJoinCode = async (): Promise<string> => {
+const generateUniqueJoinCode = async () => {
   const characters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed confusing chars like I, O, 0, 1
   let joinCode = '';
   let isUnique = false;
@@ -210,7 +210,7 @@ export const getMyHackathons = async (req, res) => {
 // Get hackathon details by ID
 export const getHackathonById = async (req, res) => {
   const { id } = req.params;
-  const adminId = parseInt(req.headers['x-admin-id'] as string);
+  const adminId = parseInt(req.headers['x-admin-id']);
 
   try {
     const hackathon = await prisma.hackathon.findUnique({
