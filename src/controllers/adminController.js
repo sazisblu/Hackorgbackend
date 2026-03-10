@@ -83,6 +83,7 @@ export const loginAdmin = async (req, res) => {
         Message: `Admin with the given email exists ${email}`,
         id: admin.id,
         email: admin.email,
+        fullname: admin.fullname,
         token: generateToken(admin.id),
       });
     } else {
