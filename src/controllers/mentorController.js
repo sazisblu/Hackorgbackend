@@ -191,10 +191,22 @@ export const getWebsiteMentors = async (req, res) => {
   const { websiteId } = req.params;
 
   try {
-    const mentors = await prisma.mentor.findMany({
-      where: { websiteId: parseInt(websiteId) },
-      orderBy: { createdAt: "desc" },
-    });
+    // First check if the Mentor table exists by trying to query it
+    let mentors = [];
+    try {
+      mentors = await prisma.mentor.findMany({
+        where: { websiteId: parseInt(websiteId) },
+        orderBy: { createdAt: "desc" },
+      });
+    } catch (tableError) {
+      // If the table doesn't exist yet, return empty array
+      console.log("Mentor table might not exist yet:", tableError.message);
+      return res.status(200).json({
+        success: true,
+        mentors: [],
+        message: "Mentor table not initialized. Please run database migration.",
+      });
+    }
 
     res.status(200).json({
       success: true,

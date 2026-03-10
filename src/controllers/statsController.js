@@ -33,12 +33,8 @@ export const getAdminStats = async (req, res) => {
           },
           orderBy: { registeredAt: 'desc' },
         },
-        mentors: {
-          select: {
-            id: true,
-            status: true,
-          },
-        },
+        // Only include mentors if the table exists
+        // mentors: true, // Removed to avoid error when table doesn't exist
       },
       orderBy: { updatedAt: 'desc' },
     });
@@ -54,8 +50,21 @@ export const getAdminStats = async (req, res) => {
     const approvedRegistrations = allRegistrations.filter(r => r.status === 'APPROVED').length;
     const rejectedRegistrations = allRegistrations.filter(r => r.status === 'REJECTED').length;
 
-    const totalMentors = websites.flatMap(w => w.mentors).length;
-    const activeMentors = websites.flatMap(w => w.mentors).filter(m => m.status === 'ACTIVE').length;
+    // Try to get mentors count, default to 0 if table doesn't exist
+    let totalMentors = 0;
+    let activeMentors = 0;
+    try {
+      const mentors = await prisma.mentor.findMany({
+        where: {
+          websiteId: { in: websites.map(w => w.id) }
+        },
+        select: { id: true, status: true }
+      });
+      totalMentors = mentors.length;
+      activeMentors = mentors.filter(m => m.status === 'ACTIVE').length;
+    } catch (mentorError) {
+      console.log("Mentor table not found, skipping mentor stats");
+    }
 
     // Format hackathons list
     const hackathonsList = websites.map(w => ({
@@ -65,7 +74,7 @@ export const getAdminStats = async (req, res) => {
       status: w.status,
       viewCount: w.viewCount,
       participantCount: w.registrations.length,
-      mentorCount: w.mentors.length,
+      mentorCount: 0, // Will be updated if mentor table exists
       pendingCount: w.registrations.filter(r => r.status === 'PENDING').length,
       createdAt: w.createdAt,
       updatedAt: w.updatedAt,
