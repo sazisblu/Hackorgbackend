@@ -46,6 +46,7 @@ export const createAdmin = async (req, res) => {
     res.status(201).json({
       ...admin,
       onboardingCompleted: false,
+      token: generateToken(admin.id),
     });
   } catch (error) {
     console.error("Error creating admin:", error);

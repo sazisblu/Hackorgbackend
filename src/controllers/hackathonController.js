@@ -224,8 +224,10 @@ export const getMyHackathons = async (req, res) => {
                 title: true,
                 slug: true,
                 status: true,
+                mentors: { select: { id: true } },
               },
             },
+            registrations: { select: { id: true } },
           },
         },
       },
@@ -239,7 +241,14 @@ export const getMyHackathons = async (req, res) => {
       joinCode: ah.hackathon.joinCode,
       role: ah.role,
       joinedAt: ah.joinedAt,
-      website: ah.hackathon.website,
+      website: ah.hackathon.website ? {
+        id: ah.hackathon.website.id,
+        title: ah.hackathon.website.title,
+        slug: ah.hackathon.website.slug,
+        status: ah.hackathon.website.status,
+      } : null,
+      participantCount: ah.hackathon.registrations?.length || 0,
+      mentorCount: ah.hackathon.website?.mentors?.length || 0,
     }));
 
     res.status(200).json({

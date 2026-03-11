@@ -46,6 +46,7 @@ model Hackathon {
   website     Website?         @relation(fields: [websiteId], references: [id])
   admins      AdminHackathon[] // Many-to-many with Admin
   registrations Registration[] // Participants registered to this hackathon (optional)
+  mentors     Mentor[]         // Mentors for this hackathon
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
@@ -159,7 +160,11 @@ model Mentor {
   linkedin    String?           // LinkedIn URL
   github      String?           // GitHub username
 
-  // Link to website (hackathon)
+  // Link to hackathon (new - primary)
+  hackathonId Int?
+  hackathon   Hackathon? @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+
+  // Link to website (legacy - keep for backward compatibility)
   websiteId   Int
   website     Website  @relation(fields: [websiteId], references: [id], onDelete: Cascade)
 
@@ -170,6 +175,7 @@ model Mentor {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  @@index([hackathonId])
   @@index([websiteId])
 }
 

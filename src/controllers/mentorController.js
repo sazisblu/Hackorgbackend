@@ -12,25 +12,27 @@ const prisma = new client.PrismaClient({ adapter });
 
 // Create a new mentor
 export const createMentor = async (req, res) => {
-  const { name, email, image, title, bio, expertise, linkedin, github, websiteId, status } = req.body;
+  const { name, email, image, title, bio, expertise, linkedin, github, hackathonId, websiteId, status } = req.body;
 
   try {
-    if (!name || !websiteId) {
-      return res.status(400).json({
-        success: false,
-        error: "Name and websiteId are required",
+    let finalHackathonId = hackathonId ? parseInt(hackathonId) : null;
+    let finalWebsiteId = websiteId ? parseInt(websiteId) : null;
+
+    // If hackathonId provided, get the linked website
+    if (finalHackathonId && !finalWebsiteId) {
+      const hackathon = await prisma.hackathon.findUnique({
+        where: { id: finalHackathonId },
+        include: { website: { select: { id: true } } },
       });
+      if (hackathon?.website) {
+        finalWebsiteId = hackathon.website.id;
+      }
     }
 
-    // Verify website exists
-    const website = await prisma.website.findUnique({
-      where: { id: parseInt(websiteId) },
-    });
-
-    if (!website) {
-      return res.status(404).json({
+    if (!name || !finalWebsiteId) {
+      return res.status(400).json({
         success: false,
-        error: "Website not found",
+        error: "Name and hackathonId (or websiteId) are required",
       });
     }
 
@@ -44,7 +46,8 @@ export const createMentor = async (req, res) => {
         expertise: expertise || [],
         linkedin: linkedin || null,
         github: github || null,
-        websiteId: parseInt(websiteId),
+        hackathonId: finalHackathonId,
+        websiteId: finalWebsiteId,
         status: status || "ACTIVE",
       },
     });
@@ -214,6 +217,50 @@ export const getWebsiteMentors = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching mentors:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+};
+
+// Get all mentors for a hackathon
+export const getHackathonMentors = async (req, res) => {
+  const { hackathonId } = req.params;
+
+  try {
+    // Get the hackathon with its linked website
+    const hackathon = await prisma.hackathon.findUnique({
+      where: { id: parseInt(hackathonId) },
+      include: { website: { select: { id: true } } },
+    });
+
+    if (!hackathon) {
+      return res.status(404).json({
+        success: false,
+        error: "Hackathon not found",
+      });
+    }
+
+    // Get mentors by hackathonId (new) or websiteId (legacy)
+    const conditions = [{ hackathonId: parseInt(hackathonId) }];
+    if (hackathon.website?.id) {
+      conditions.push({ websiteId: hackathon.website.id });
+    }
+
+    const mentors = await prisma.mentor.findMany({
+      where: {
+        OR: conditions,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.status(200).json({
+      success: true,
+      mentors,
+    });
+  } catch (error) {
+    console.error("Error fetching hackathon mentors:", error);
     res.status(500).json({
       success: false,
       error: error.message,
