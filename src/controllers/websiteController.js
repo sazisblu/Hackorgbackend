@@ -80,11 +80,11 @@ export const saveWebsite = async (req, res) => {
       const slug = generateSlug(eventName);
 
       if (hackathon.website) {
-        // Update existing website
+        // Update existing website - use provided eventName or keep existing title
         const website = await prisma.website.update({
           where: { id: hackathon.website.id },
           data: {
-            title: eventName,
+            title: websiteData.eventName || hackathon.website.title,
             description: websiteData.description || null,
             websiteData: websiteData,
             slug: slug,
@@ -115,7 +115,7 @@ export const saveWebsite = async (req, res) => {
         const website = await prisma.website.create({
           data: {
             slug: uniqueSlug,
-            title: eventName,
+            title: hackathon.name, // Default to hackathon name
             description: websiteData.description || null,
             websiteData: websiteData,
             status: "DRAFT",
