@@ -125,19 +125,6 @@ export const getProjectsByHackathon = async (req, res) => {
     const projects = await prisma.project.findMany({
       where: whereClause,
       orderBy: { submittedAt: "desc" },
-      include: {
-        assignments: {
-          include: {
-            judge: {
-              include: {
-                admin: {
-                  select: { id: true, fullname: true, email: true },
-                },
-              },
-            },
-          },
-        },
-      },
     });
 
     res.status(200).json({
@@ -161,7 +148,7 @@ export const getPublicProjects = async (req, res) => {
     const projects = await prisma.project.findMany({
       where: {
         hackathonId: parseInt(hackathonId),
-        status: { notIn: ["DRAFT"] },
+        status: { not: "DRAFT" },
       },
       orderBy: { submittedAt: "desc" },
       select: {
@@ -198,22 +185,6 @@ export const getProjectById = async (req, res) => {
       where: { id: parseInt(id) },
       include: {
         hackathon: true,
-        assignments: {
-          include: {
-            judge: {
-              include: {
-                admin: {
-                  select: { id: true, fullname: true, email: true },
-                },
-              },
-            },
-            scores: {
-              include: {
-                criteria: true,
-              },
-            },
-          },
-        },
       },
     });
 
@@ -375,7 +346,7 @@ export const updateProjectStatus = async (req, res) => {
     });
   }
 
-  const validStatuses = ["DRAFT", "SUBMITTED", "UNDER_REVIEW", "JUDGED", "FINALIST", "WINNER"];
+  const validStatuses = ["DRAFT", "SUBMITTED"];
   if (!validStatuses.includes(status)) {
     return res.status(400).json({
       success: false,

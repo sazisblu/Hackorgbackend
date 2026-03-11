@@ -33,7 +33,6 @@ model Admin {
   hackathons AdminHackathon[] // Many-to-many with Hackathon
   onboardingCompleted Boolean @default(false)
   entitlementClaims ParticipantEntitlement[] // Entitlement claims made by this admin
-  judgeProfiles  Judge[]  // Admin can be a judge in multiple hackathons
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 }
@@ -48,9 +47,7 @@ model Hackathon {
   admins      AdminHackathon[] // Many-to-many with Admin
   registrations Registration[] // Participants registered to this hackathon (optional)
   mentors     Mentor[]         // Mentors for this hackathon
-  judges      Judge[]          // Judges for this hackathon
   projects    Project[]        // Projects submitted for this hackathon
-  judgingCriteria JudgingCriteria[] // Judging criteria/rubrics
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
@@ -230,47 +227,6 @@ model ParticipantEntitlement {
   @@index([entitlementId])
 }
 
-// ============================================
-// JUDGING SYSTEM MODELS
-// ============================================
-
-// Judging Criteria/Rubric defined by organizers
-model JudgingCriteria {
-  id          Int       @id @default(autoincrement())
-  name        String    // e.g., "Innovation", "Technical Complexity"
-  description String?
-  maxScore    Int       @default(10)  // Maximum score for this criteria
-  weight      Float     @default(1.0) // Weight for weighted scoring
-  hackathonId Int
-  hackathon   Hackathon @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
-  scores      Score[]
-  order       Int       @default(0)   // Display order
-
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  @@index([hackathonId])
-  @@unique([name, hackathonId])
-}
-
-// Judge assignment to hackathon
-model Judge {
-  id          Int       @id @default(autoincrement())
-  adminId     Int       // Link to Admin user (judges are admins with judge role)
-  hackathonId Int
-  admin       Admin     @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  hackathon   Hackathon @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
-
-  // Project assignments for this judge
-  assignments JudgeAssignment[]
-
-  createdAt   DateTime  @default(now())
-
-  @@unique([adminId, hackathonId])
-  @@index([hackathonId])
-  @@index([adminId])
-}
-
 // Project model - teams submit projects for hackathons
 model Project {
   id          Int       @id @default(autoincrement())
@@ -293,9 +249,6 @@ model Project {
   registrationId Int? @unique
   registration   Registration? @relation(fields: [registrationId], references: [id], onDelete: SetNull)
 
-  // Judge assignments
-  assignments   JudgeAssignment[]
-
   status      ProjectStatus @default(SUBMITTED)
   submittedAt DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -308,51 +261,4 @@ model Project {
 enum ProjectStatus {
   DRAFT        // Still being worked on
   SUBMITTED    // Submitted for review
-  UNDER_REVIEW // Being evaluated by judges
-  JUDGED       // Evaluation complete
-  FINALIST     // Selected as finalist
-  WINNER       // Won the hackathon
-}
-
-// Judge-Project assignment
-model JudgeAssignment {
-  id        Int       @id @default(autoincrement())
-  judgeId   Int
-  projectId Int
-
-  judge     Judge     @relation(fields: [judgeId], references: [id], onDelete: Cascade)
-  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  // Track evaluation status
-  isCompleted Boolean @default(false)
-  completedAt DateTime?
-
-  // Scores given by this judge for this project
-  scores    Score[]
-
-  createdAt DateTime @default(now())
-
-  @@unique([judgeId, projectId])
-  @@index([judgeId])
-  @@index([projectId])
-}
-
-// Individual score for a criteria by a judge
-model Score {
-  id             Int       @id @default(autoincrement())
-  judgeAssignmentId Int
-  criteriaId     Int
-
-  score          Int       // Actual score given
-  feedback       String?   // Optional feedback comment
-
-  judgeAssignment JudgeAssignment @relation(fields: [judgeAssignmentId], references: [id], onDelete: Cascade)
-  criteria        JudgingCriteria @relation(fields: [criteriaId], references: [id], onDelete: Cascade)
-
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-
-  @@unique([judgeAssignmentId, criteriaId])
-  @@index([judgeAssignmentId])
-  @@index([criteriaId])
 }
