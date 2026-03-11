@@ -10,7 +10,30 @@ const pool = new pg.Pool({
 const adapter = new PrismaPg(pool);
 const prisma = new client.PrismaClient({ adapter });
 
-// Get all hackathons where user is an organizer (AdminHackathon) or judge
+// Helper: Get or create a Judge record for an admin in a hackathon
+async function getOrCreateJudge(adminId, hackathonId) {
+  let judge = await prisma.judge.findUnique({
+    where: {
+      adminId_hackathonId: {
+        adminId,
+        hackathonId,
+      },
+    },
+  });
+
+  if (!judge) {
+    judge = await prisma.judge.create({
+      data: {
+        adminId,
+        hackathonId,
+      },
+    });
+  }
+
+  return judge;
+}
+
+// Get all hackathons where user is an organizer (AdminHackathon) - they are automatically judges
 export const getUserHackathonsForJudging = async (req, res) => {
   const adminId = parseInt(req.headers["x-admin-id"]);
 
@@ -22,7 +45,7 @@ export const getUserHackathonsForJudging = async (req, res) => {
   }
 
   try {
-    // Get hackathons where user is an organizer
+    // Get hackathons where user is an organizer (automatically a judge too)
     const organizerMemberships = await prisma.adminHackathon.findMany({
       where: { adminId },
       include: {
@@ -31,7 +54,7 @@ export const getUserHackathonsForJudging = async (req, res) => {
             _count: {
               select: {
                 projects: { where: { status: { not: "DRAFT" } } },
-                judges: true,
+                admins: true, // All admins are potential judges
               },
             },
             judgingCriteria: true,
@@ -40,105 +63,48 @@ export const getUserHackathonsForJudging = async (req, res) => {
       },
     });
 
-    // Get hackathons where user is a judge
-    const judgeMemberships = await prisma.judge.findMany({
-      where: { adminId },
-      include: {
-        hackathon: {
-          include: {
-            _count: {
-              select: {
-                projects: { where: { status: { not: "DRAFT" } } },
-                judges: true,
-              },
-            },
-            judgingCriteria: true,
+    // Combine into hackathons list - all organizers are automatically judges
+    const hackathons = await Promise.all(
+      organizerMemberships.map(async (membership) => {
+        const hackathon = membership.hackathon;
+
+        // Get or create judge record to check assignments
+        const judge = await getOrCreateJudge(adminId, hackathon.id);
+
+        // Get assignment stats for this judge
+        const assignmentStats = await prisma.judgeAssignment.count({
+          where: { judgeId: judge.id },
+        });
+
+        const completedStats = await prisma.judgeAssignment.count({
+          where: {
+            judgeId: judge.id,
+            isCompleted: true,
           },
-        },
-      },
-    });
+        });
 
-    // Combine and deduplicate hackathons
-    const hackathonMap = new Map();
+        // Get evaluated projects count
+        const evaluatedProjects = await prisma.project.count({
+          where: {
+            hackathonId: hackathon.id,
+            status: { in: ["JUDGED", "FINALIST", "WINNER"] },
+          },
+        });
 
-    // Add organizer hackathons
-    for (const membership of organizerMemberships) {
-      const hackathon = membership.hackathon;
-      if (!hackathonMap.has(hackathon.id)) {
-        hackathonMap.set(hackathon.id, {
+        return {
           id: hackathon.id,
           name: hackathon.name,
           description: hackathon.description,
           createdAt: hackathon.createdAt,
           isOrganizer: true,
-          isJudge: false,
+          isJudge: true, // All organizers are automatically judges
           totalProjects: hackathon._count.projects,
-          totalJudges: hackathon._count.judges,
+          totalJudges: hackathon._count.admins, // All admins are judges
           criteriaCount: hackathon.judgingCriteria.length,
-        });
-      } else {
-        hackathonMap.get(hackathon.id).isOrganizer = true;
-      }
-    }
-
-    // Add judge hackathons
-    for (const membership of judgeMemberships) {
-      const hackathon = membership.hackathon;
-      if (!hackathonMap.has(hackathon.id)) {
-        hackathonMap.set(hackathon.id, {
-          id: hackathon.id,
-          name: hackathon.name,
-          description: hackathon.description,
-          createdAt: hackathon.createdAt,
-          isOrganizer: false,
-          isJudge: true,
-          totalProjects: hackathon._count.projects,
-          totalJudges: hackathon._count.judges,
-          criteriaCount: hackathon.judgingCriteria.length,
-        });
-      } else {
-        hackathonMap.get(hackathon.id).isJudge = true;
-      }
-    }
-
-    // For judge hackathons, get assignment stats
-    const hackathons = await Promise.all(
-      Array.from(hackathonMap.values()).map(async (h) => {
-        if (h.isJudge) {
-          const judge = await prisma.judge.findUnique({
-            where: {
-              adminId_hackathonId: {
-                adminId,
-                hackathonId: h.id,
-              },
-            },
-            include: {
-              _count: {
-                select: { assignments: true },
-              },
-              assignments: {
-                where: { isCompleted: true },
-                select: { id: true },
-              },
-            },
-          });
-
-          if (judge) {
-            h.myAssignedProjects = judge._count.assignments;
-            h.myCompletedEvaluations = judge.assignments.length;
-          }
-        }
-
-        // Get evaluated projects count
-        const evaluatedProjects = await prisma.project.count({
-          where: {
-            hackathonId: h.id,
-            status: { in: ["JUDGED", "FINALIST", "WINNER"] },
-          },
-        });
-        h.evaluatedProjects = evaluatedProjects;
-
-        return h;
+          evaluatedProjects,
+          myAssignedProjects: assignmentStats,
+          myCompletedEvaluations: completedStats,
+        };
       })
     );
 
@@ -161,7 +127,7 @@ export const getJudgingOverview = async (req, res) => {
   const adminId = parseInt(req.headers["x-admin-id"]);
 
   try {
-    // Check if user is organizer or judge
+    // Check if user is organizer (AdminHackathon member)
     const isOrganizer = await prisma.adminHackathon.findUnique({
       where: {
         adminId_hackathonId: {
@@ -171,16 +137,7 @@ export const getJudgingOverview = async (req, res) => {
       },
     });
 
-    const isJudge = await prisma.judge.findUnique({
-      where: {
-        adminId_hackathonId: {
-          adminId,
-          hackathonId: parseInt(hackathonId),
-        },
-      },
-    });
-
-    if (!isOrganizer && !isJudge) {
+    if (!isOrganizer) {
       return res.status(403).json({
         success: false,
         error: "You don't have access to this hackathon",
@@ -194,7 +151,7 @@ export const getJudgingOverview = async (req, res) => {
         _count: {
           select: {
             projects: { where: { status: { not: "DRAFT" } } },
-            judges: true,
+            admins: true, // All admins are judges
             judgingCriteria: true,
           },
         },
@@ -237,11 +194,10 @@ export const getJudgingOverview = async (req, res) => {
       },
     });
 
-    // Get judge stats
-    const totalJudges = await prisma.judge.count({
-      where: { hackathonId: parseInt(hackathonId) },
-    });
+    // Get all judges (all admins in hackathon)
+    const totalJudges = hackathon._count.admins;
 
+    // Get assignment stats
     const totalAssignments = await prisma.judgeAssignment.count({
       where: {
         judge: { hackathonId: parseInt(hackathonId) },
@@ -256,39 +212,20 @@ export const getJudgingOverview = async (req, res) => {
     });
 
     // Get criteria count
-    const criteriaCount = await prisma.judgingCriteria.count({
-      where: { hackathonId: parseInt(hackathonId) },
-    });
+    const criteriaCount = hackathon._count.judgingCriteria;
 
-    // For judges, get their personal stats
-    let myStats = null;
-    if (isJudge) {
-      const judge = await prisma.judge.findUnique({
-        where: {
-          adminId_hackathonId: {
-            adminId,
-            hackathonId: parseInt(hackathonId),
-          },
-        },
-        include: {
-          _count: {
-            select: { assignments: true },
-          },
-          assignments: {
-            where: { isCompleted: true },
-            select: { id: true },
-          },
-        },
-      });
+    // Get personal stats - ensure judge record exists
+    const judge = await getOrCreateJudge(adminId, parseInt(hackathonId));
 
-      if (judge) {
-        myStats = {
-          totalAssigned: judge._count.assignments,
-          completed: judge.assignments.length,
-          pending: judge._count.assignments - judge.assignments.length,
-        };
-      }
-    }
+    const myStats = {
+      totalAssigned: await prisma.judgeAssignment.count({
+        where: { judgeId: judge.id },
+      }),
+      completed: await prisma.judgeAssignment.count({
+        where: { judgeId: judge.id, isCompleted: true },
+      }),
+    };
+    myStats.pending = myStats.totalAssigned - myStats.completed;
 
     res.status(200).json({
       success: true,
@@ -298,8 +235,8 @@ export const getJudgingOverview = async (req, res) => {
           name: hackathon.name,
           description: hackathon.description,
         },
-        isOrganizer: !!isOrganizer,
-        isJudge: !!isJudge,
+        isOrganizer: true,
+        isJudge: true, // All organizers are automatically judges
         projects: {
           total: totalProjects,
           submitted: submittedProjects,
@@ -362,42 +299,51 @@ export const getAssignmentMatrix = async (req, res) => {
       orderBy: { name: "asc" },
     });
 
-    // Get all judges with their assignments
-    const judges = await prisma.judge.findMany({
+    // Get all admins (potential judges) for this hackathon
+    const hackathonAdmins = await prisma.adminHackathon.findMany({
       where: { hackathonId: parseInt(hackathonId) },
       include: {
         admin: {
           select: { id: true, fullname: true, email: true },
         },
-        assignments: {
+      },
+    });
+
+    // Build assignment matrix - ensure judge records exist for all admins
+    const judgesMatrix = await Promise.all(
+      hackathonAdmins.map(async (membership) => {
+        // Get or create judge record
+        const judge = await getOrCreateJudge(membership.adminId, parseInt(hackathonId));
+
+        // Get assignments for this judge
+        const assignments = await prisma.judgeAssignment.findMany({
+          where: { judgeId: judge.id },
           include: {
             project: { select: { id: true } },
           },
-        },
-      },
-      orderBy: { createdAt: "asc" },
-    });
+        });
 
-    // Build assignment matrix
-    const assignmentMatrix = judges.map((judge) => ({
-      judge: {
-        id: judge.id,
-        adminId: judge.adminId,
-        name: judge.admin.fullname,
-        email: judge.admin.email,
-      },
-      assignments: judge.assignments.map((a) => ({
-        projectId: a.projectId,
-        assignmentId: a.id,
-        isCompleted: a.isCompleted,
-      })),
-      totalAssigned: judge.assignments.length,
-      completed: judge.assignments.filter((a) => a.isCompleted).length,
-    }));
+        return {
+          judge: {
+            id: judge.id,
+            adminId: membership.adminId,
+            name: membership.admin.fullname,
+            email: membership.admin.email,
+          },
+          assignments: assignments.map((a) => ({
+            projectId: a.projectId,
+            assignmentId: a.id,
+            isCompleted: a.isCompleted,
+          })),
+          totalAssigned: assignments.length,
+          completed: assignments.filter((a) => a.isCompleted).length,
+        };
+      })
+    );
 
     // Project assignment counts
     const projectAssignmentCounts = {};
-    for (const judge of judges) {
+    for (const judge of judgesMatrix) {
       for (const assignment of judge.assignments) {
         if (!projectAssignmentCounts[assignment.projectId]) {
           projectAssignmentCounts[assignment.projectId] = 0;
@@ -410,7 +356,7 @@ export const getAssignmentMatrix = async (req, res) => {
       success: true,
       matrix: {
         projects,
-        judges: assignmentMatrix,
+        judges: judgesMatrix,
         projectAssignmentCounts,
       },
     });
@@ -423,16 +369,16 @@ export const getAssignmentMatrix = async (req, res) => {
   }
 };
 
-// Bulk assign projects to judges
+// Bulk assign projects to judges (by adminId)
 export const bulkAssignProjects = async (req, res) => {
   const { hackathonId } = req.params;
-  const { judgeIds, projectIds } = req.body;
+  const { adminIds, projectIds } = req.body; // Changed from judgeIds to adminIds
   const adminId = parseInt(req.headers["x-admin-id"]);
 
-  if (!Array.isArray(judgeIds) || !Array.isArray(projectIds)) {
+  if (!Array.isArray(adminIds) || !Array.isArray(projectIds)) {
     return res.status(400).json({
       success: false,
-      error: "judgeIds and projectIds must be arrays",
+      error: "adminIds and projectIds must be arrays",
     });
   }
 
@@ -454,44 +400,58 @@ export const bulkAssignProjects = async (req, res) => {
       });
     }
 
-    // Create assignments
-    const assignmentsToCreate = [];
-    for (const judgeId of judgeIds) {
-      for (const projectId of projectIds) {
-        assignmentsToCreate.push({
-          judgeId: parseInt(judgeId),
-          projectId: parseInt(projectId),
-        });
-      }
-    }
-
-    // Check for existing assignments
-    const existingAssignments = await prisma.judgeAssignment.findMany({
+    // Verify all admins are members of this hackathon
+    const validAdmins = await prisma.adminHackathon.findMany({
       where: {
-        judgeId: { in: judgeIds.map((id) => parseInt(id)) },
-        projectId: { in: projectIds.map((id) => parseInt(id)) },
+        adminId: { in: adminIds.map((id) => parseInt(id)) },
+        hackathonId: parseInt(hackathonId),
       },
     });
 
-    const existingKeys = new Set(
-      existingAssignments.map((a) => `${a.judgeId}-${a.projectId}`)
-    );
-
-    const newAssignments = assignmentsToCreate.filter(
-      (a) => !existingKeys.has(`${a.judgeId}-${a.projectId}`)
-    );
-
-    if (newAssignments.length > 0) {
-      await prisma.judgeAssignment.createMany({
-        data: newAssignments,
-        skipDuplicates: true,
+    if (validAdmins.length !== adminIds.length) {
+      return res.status(400).json({
+        success: false,
+        error: "Some admins are not members of this hackathon",
       });
+    }
+
+    // Create assignments
+    const newAssignments = [];
+    const existingCount = { count: 0 };
+
+    for (const adminIdToAssign of adminIds) {
+      // Get or create judge record
+      const judge = await getOrCreateJudge(parseInt(adminIdToAssign), parseInt(hackathonId));
+
+      for (const projectId of projectIds) {
+        // Check if assignment already exists
+        const existing = await prisma.judgeAssignment.findUnique({
+          where: {
+            judgeId_projectId: {
+              judgeId: judge.id,
+              projectId: parseInt(projectId),
+            },
+          },
+        });
+
+        if (!existing) {
+          await prisma.judgeAssignment.create({
+            data: {
+              judgeId: judge.id,
+              projectId: parseInt(projectId),
+            },
+          });
+          newAssignments.push({ judgeId: judge.id, projectId });
+        } else {
+          existingCount.count++;
+        }
+      }
     }
 
     res.status(200).json({
       success: true,
       message: `Created ${newAssignments.length} new assignments`,
-      skipped: existingAssignments.length,
+      skipped: existingCount.count,
     });
   } catch (error) {
     console.error("Error bulk assigning projects:", error);
@@ -502,7 +462,7 @@ export const bulkAssignProjects = async (req, res) => {
   }
 };
 
-// Random assignment - distribute projects evenly among judges
+// Random assignment - distribute projects evenly among all admins
 export const randomAssignProjects = async (req, res) => {
   const { hackathonId } = req.params;
   const { projectsPerJudge, onlyUnassigned } = req.body;
@@ -526,46 +486,45 @@ export const randomAssignProjects = async (req, res) => {
       });
     }
 
-    // Get all judges
-    const judges = await prisma.judge.findMany({
+    // Get all admins (potential judges) for this hackathon
+    const hackathonAdmins = await prisma.adminHackathon.findMany({
       where: { hackathonId: parseInt(hackathonId) },
-      select: { id: true },
+      select: { adminId: true },
     });
 
-    if (judges.length === 0) {
+    if (hackathonAdmins.length === 0) {
       return res.status(400).json({
         success: false,
-        error: "No judges found for this hackathon",
+        error: "No admins found for this hackathon",
       });
     }
 
     // Get projects
-    let projectsQuery = {
-      hackathonId: parseInt(hackathonId),
-      status: { not: "DRAFT" },
-    };
-
-    // If onlyUnassigned, filter projects that have no assignments
     let projects;
     if (onlyUnassigned) {
-      const assignedProjectIds = await prisma.judgeAssignment.findMany({
+      // Get all assigned project IDs
+      const allAssignments = await prisma.judgeAssignment.findMany({
         where: {
           judge: { hackathonId: parseInt(hackathonId) },
         },
         select: { projectId: true },
       });
-      const assignedIds = [...new Set(assignedProjectIds.map((a) => a.projectId))];
+      const assignedIds = [...new Set(allAssignments.map((a) => a.projectId))];
 
       projects = await prisma.project.findMany({
         where: {
-          ...projectsQuery,
+          hackathonId: parseInt(hackathonId),
+          status: { not: "DRAFT" },
           id: { notIn: assignedIds },
         },
         select: { id: true },
       });
     } else {
       projects = await prisma.project.findMany({
-        where: projectsQuery,
+        where: {
+          hackathonId: parseInt(hackathonId),
+          status: { not: "DRAFT" },
+        },
         select: { id: true },
       });
     }
@@ -580,58 +539,54 @@ export const randomAssignProjects = async (req, res) => {
     // Shuffle projects
     const shuffledProjects = projects.sort(() => Math.random() - 0.5);
 
-    // Distribute projects to judges
-    const assignmentsToCreate = [];
-    const projectsCount = projectsPerJudge || Math.ceil(projects.length / judges.length);
+    // Distribute projects to admins
+    const newAssignments = [];
+    const assignmentCounts = {}; // Track assignments per admin
 
     for (let i = 0; i < shuffledProjects.length; i++) {
-      const judgeIndex = i % judges.length;
+      const adminIndex = i % hackathonAdmins.length;
+      const adminToAssign = hackathonAdmins[adminIndex];
       const project = shuffledProjects[i];
-      const judge = judges[judgeIndex];
 
       // Limit assignments per judge if specified
       if (projectsPerJudge) {
-        const currentJudgeAssignments = assignmentsToCreate.filter(
-          (a) => a.judgeId === judge.id
-        ).length;
-        if (currentJudgeAssignments >= projectsPerJudge) {
+        const key = adminToAssign.adminId;
+        if (!assignmentCounts[key]) assignmentCounts[key] = 0;
+        if (assignmentCounts[key] >= projectsPerJudge) {
           continue;
         }
+        assignmentCounts[key]++;
       }
 
-      assignmentsToCreate.push({
-        judgeId: judge.id,
-        projectId: project.id,
+      // Get or create judge record
+      const judge = await getOrCreateJudge(adminToAssign.adminId, parseInt(hackathonId));
+
+      // Check if assignment already exists
+      const existing = await prisma.judgeAssignment.findUnique({
+        where: {
+          judgeId_projectId: {
+            judgeId: judge.id,
+            projectId: project.id,
+          },
+        },
       });
-    }
 
-    // Check for existing assignments
-    const existingAssignments = await prisma.judgeAssignment.findMany({
-      where: {
-        judgeId: { in: judges.map((j) => j.id) },
-        projectId: { in: projects.map((p) => p.id) },
-      },
-    });
-
-    const existingKeys = new Set(
-      existingAssignments.map((a) => `${a.judgeId}-${a.projectId}`)
-    );
-
-    const newAssignments = assignmentsToCreate.filter(
-      (a) => !existingKeys.has(`${a.judgeId}-${a.projectId}`)
-    );
-
-    if (newAssignments.length > 0) {
-      await prisma.judgeAssignment.createMany({
-        data: newAssignments,
-        skipDuplicates: true,
-      });
+      if (!existing) {
+        await prisma.judgeAssignment.create({
+          data: {
+            judgeId: judge.id,
+            projectId: project.id,
+          },
+        });
+        newAssignments.push({ adminId: adminToAssign.adminId, projectId: project.id });
+      }
     }
 
     res.status(200).json({
       success: true,
       message: `Created ${newAssignments.length} new assignments`,
-      skipped: existingAssignments.length,
+      totalProjects: projects.length,
+      totalJudges: hackathonAdmins.length,
     });
   } catch (error) {
     console.error("Error randomly assigning projects:", error);
