@@ -24,7 +24,7 @@ app.use(
     origin: process.env.FRONTEND_URL, // Adjust to your frontend URL
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-admin-id"],
   }),
 );
 
