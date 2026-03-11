@@ -13,6 +13,7 @@ import criteriaRoute from "./routes/criteriaRoute.js";
 import projectRoute from "./routes/projectRoute.js";
 import judgeRoute from "./routes/judgeRoute.js";
 import scoringRoute from "./routes/scoringRoute.js";
+import judgingRoute from "./routes/judgingRoute.js";
 import chalk from "chalk";
 
 const app = express();
@@ -41,6 +42,7 @@ app.use("/api", criteriaRoute);
 app.use("/api", projectRoute);
 app.use("/api", judgeRoute);
 app.use("/api", scoringRoute);
+app.use("/api", judgingRoute);
 app.get("/test", (req, res) => {
   res.status(200).json({
     status: 200,
