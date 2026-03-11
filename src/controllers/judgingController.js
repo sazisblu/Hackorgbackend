@@ -34,7 +34,7 @@ export const getUserHackathonsForJudging = async (req, res) => {
                 judges: true,
               },
             },
-            criteria: true,
+            judgingCriteria: true,
           },
         },
       },
@@ -52,7 +52,7 @@ export const getUserHackathonsForJudging = async (req, res) => {
                 judges: true,
               },
             },
-            criteria: true,
+            judgingCriteria: true,
           },
         },
       },
@@ -74,7 +74,7 @@ export const getUserHackathonsForJudging = async (req, res) => {
           isJudge: false,
           totalProjects: hackathon._count.projects,
           totalJudges: hackathon._count.judges,
-          criteriaCount: hackathon.criteria.length,
+          criteriaCount: hackathon.judgingCriteria.length,
         });
       } else {
         hackathonMap.get(hackathon.id).isOrganizer = true;
@@ -94,7 +94,7 @@ export const getUserHackathonsForJudging = async (req, res) => {
           isJudge: true,
           totalProjects: hackathon._count.projects,
           totalJudges: hackathon._count.judges,
-          criteriaCount: hackathon.criteria.length,
+          criteriaCount: hackathon.judgingCriteria.length,
         });
       } else {
         hackathonMap.get(hackathon.id).isJudge = true;
@@ -195,7 +195,7 @@ export const getJudgingOverview = async (req, res) => {
           select: {
             projects: { where: { status: { not: "DRAFT" } } },
             judges: true,
-            criteria: true,
+            judgingCriteria: true,
           },
         },
       },
