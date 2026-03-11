@@ -463,10 +463,19 @@ export const publishWebsite = async (req, res) => {
 
     // Check access
     let hasAccess = false;
-    if (hackathonId && existingWebsite.hackathon?.id === parseInt(hackathonId)) {
-      hasAccess = await checkHackathonAccess(adminId, hackathonId);
-    } else if (adminId && existingWebsite.adminId === parseInt(adminId)) {
+
+    // Check direct ownership (legacy)
+    if (adminId && existingWebsite.adminId === parseInt(adminId)) {
       hasAccess = true;
+    }
+    // Check hackathon membership (new system)
+    else if (existingWebsite.hackathon && adminId) {
+      // If hackathonId provided, verify it matches
+      if (hackathonId && existingWebsite.hackathon.id !== parseInt(hackathonId)) {
+        hasAccess = false;
+      } else {
+        hasAccess = await checkHackathonAccess(adminId, existingWebsite.hackathon.id);
+      }
     }
 
     if (!hasAccess) {
@@ -517,10 +526,19 @@ export const unpublishWebsite = async (req, res) => {
 
     // Check access
     let hasAccess = false;
-    if (hackathonId && existingWebsite.hackathon?.id === parseInt(hackathonId)) {
-      hasAccess = await checkHackathonAccess(adminId, hackathonId);
-    } else if (adminId && existingWebsite.adminId === parseInt(adminId)) {
+
+    // Check direct ownership (legacy)
+    if (adminId && existingWebsite.adminId === parseInt(adminId)) {
       hasAccess = true;
+    }
+    // Check hackathon membership (new system)
+    else if (existingWebsite.hackathon && adminId) {
+      // If hackathonId provided, verify it matches
+      if (hackathonId && existingWebsite.hackathon.id !== parseInt(hackathonId)) {
+        hasAccess = false;
+      } else {
+        hasAccess = await checkHackathonAccess(adminId, existingWebsite.hackathon.id);
+      }
     }
 
     if (!hasAccess) {
@@ -570,10 +588,19 @@ export const deleteWebsite = async (req, res) => {
 
     // Check access
     let hasAccess = false;
-    if (hackathonId && existingWebsite.hackathon?.id === parseInt(hackathonId)) {
-      hasAccess = await checkHackathonAccess(adminId, hackathonId);
-    } else if (adminId && existingWebsite.adminId === parseInt(adminId)) {
+
+    // Check direct ownership (legacy)
+    if (adminId && existingWebsite.adminId === parseInt(adminId)) {
       hasAccess = true;
+    }
+    // Check hackathon membership (new system)
+    else if (existingWebsite.hackathon && adminId) {
+      // If hackathonId provided, verify it matches
+      if (hackathonId && existingWebsite.hackathon.id !== parseInt(hackathonId)) {
+        hasAccess = false;
+      } else {
+        hasAccess = await checkHackathonAccess(adminId, existingWebsite.hackathon.id);
+      }
     }
 
     if (!hasAccess) {
